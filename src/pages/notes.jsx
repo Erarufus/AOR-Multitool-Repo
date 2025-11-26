@@ -7,18 +7,29 @@ const NotesPage = () => {
     const [filePath, setFilePath] = useState(null);
     const [content, setContent] = useState(null);
     const [isSaved, setIsSaved] = useState(true);
+    const [noteFiles, setNoteFiles] = useState([]);
 
-    const handleOpenFile = async () => {
-        const result = await window.api.openFile();
+    const loadNoteFiles = async () => {
+        const files = await window.api.getNoteFiles();
+        setNoteFiles(files);
+    };
+
+    useEffect(() => {
+        loadNoteFiles();
+    }, []);
+
+    const handleOpenFile = async (fileName) => {
+        // The main process will construct the full path
+        const result = await window.api.readNoteFile(fileName);
         if (result) {
             setFilePath(result.filePath);
             try {
                 // We save notes as JSON, so we try to parse it.
                 const parsedContent = JSON.parse(result.content);
                 setContent(parsedContent);
-            } catch (e) {
+            } catch (error) {
                 // If it's not JSON we treat it as plain text.
-                console.warn("File content is not valid JSON. Treating as plain text.");
+                console.warn("File content is not valid JSON. Treating as plain text.", error);
                 setContent({
                     type: 'doc',
                     content: [{
@@ -40,10 +51,11 @@ const NotesPage = () => {
         const handler = setTimeout(() => {
             const contentString = JSON.stringify(content, null, 2);
             window.api.saveFile(filePath, contentString);
+            loadNoteFiles(); // Refresh file list after saving
             setIsSaved(true);
         }, 400); // Wait x after the user stops typing to save.
 
-        // This cleanup function runs before the next effect or on unmount.
+        // This cleanup functio runs before the next effect or on unmount.
         // It clears the timeout, preventing the save if the content changes again quickly.
         return () => clearTimeout(handler);
     }, [content, filePath]);
@@ -56,15 +68,40 @@ const NotesPage = () => {
         setContent(newContent);
     }, []);    
 
+    const handleNewNote = async () => {
+        const title = "Untitled Note";
+        if (title) { // Keep this check in case a cancelable modal is added later
+            const result = await window.api.createNote(title);
+            if (result.success) {
+                await loadNoteFiles(); // Refresh the file list
+                handleOpenFile(result.fileName); // Open the new note
+            } else {
+                alert(`Error creating note: ${result.error}`);
+            }
+        }
+    };
+
         
 
 
     return (
         <div className="notes-layout">
             <aside className="notes-sidebar">
-                <div className="note-editor-panel">
-                    <h2>Controls</h2>
-                    <button onClick={handleOpenFile}>Open File</button>
+            <div className="sidebar-header">
+                <h2>Notes</h2>
+                <div className="sidebar-actions">
+                    <button onClick={handleNewNote} title="New Note">+</button>
+                    <button onClick={() => window.api.openNotesFolder()} title="Open Notes Folder">📂</button>
+                </div>
+            </div>
+                <div className="note-files-list">
+                    {noteFiles.map((file) => (
+                        <div key={file} className="note-file-item" onClick={() => handleOpenFile(file)}>
+                            {file}
+                        </div>
+                    ))}
+                </div>
+                <div className="file-status-panel">
                     {filePath && (
                     <div className="file-info">
                         <strong>Editing:</strong>

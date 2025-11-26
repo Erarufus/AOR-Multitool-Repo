@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import started from 'electron-squirrel-startup';
@@ -28,6 +28,67 @@ const createWindow = () => {
   // Open the DevTools.
   mainWindow.webContents.openDevTools();
 };
+
+const notesPath = path.join(app.getPath('userData'), 'notes');
+if (!fs.existsSync(notesPath)) {
+  fs.mkdirSync(notesPath, { recursive: true });
+}
+
+ipcMain.handle('notes:getFiles', async () => {
+  try{
+    const files = fs.readdirSync(notesPath);
+    return files.filter(file => file.endsWith('.json')).map(file => file.replace(/\.json$/, ''));
+  }catch(err){
+    console.error('Failed to read notes directory', err);
+    return[];
+  }
+});
+
+ipcMain.handle('notes:readFile', async (event, fileName) => {
+  const filePath = path.join(notesPath, `${fileName}.json`);
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return { filePath, content };
+  } catch (err) {
+    console.error('Failed to read file:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('notes:openFolder', () => {
+  shell.openPath(notesPath);
+});
+
+ipcMain.handle('notes:createFile', async (event, title) => {
+  if (!title || typeof title !== 'string' || title.trim().length === 0) {
+    return { success: false, error: 'Invalid title provided.' };
+  }
+    // Sanitize filename to remove invalid characters
+    const sanitizedTitle = title.replace(/[\\/:*?"<>|]/g, '');
+    let newFileName = sanitizedTitle;
+    let newFilePath = path.join(notesPath, `${newFileName}.json`);
+    let counter = 1;
+    
+    // Ensure filename is unique by appending a number if it exists
+    while (fs.existsSync(newFilePath)) {
+      newFileName = `${sanitizedTitle} (${counter})`;
+      newFilePath = path.join(notesPath, `${newFileName}.json`);
+      counter++;
+    }
+     try {
+    // Create an empty note file with a valid Tiptap/ProseMirror structure
+    const initialContent = { type: 'doc', content: [{ type: 'paragraph' }] };
+    fs.writeFileSync(newFilePath, JSON.stringify(initialContent, null, 2));
+    // Return the name (without extension) and the full path
+    return { success: true, fileName: newFileName, filePath: newFilePath };
+  } catch (err) {
+    console.error('Failed to create new note file:', err);
+    return { success: false, error: err.message };
+  }
+
+});
+
+
 
 ipcMain.handle('dialog:openFile', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
