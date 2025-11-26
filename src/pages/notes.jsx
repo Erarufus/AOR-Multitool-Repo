@@ -8,6 +8,7 @@ const NotesPage = () => {
     const [content, setContent] = useState(null);
     const [isSaved, setIsSaved] = useState(true);
     const [noteFiles, setNoteFiles] = useState([]);
+    const [noteTitle, setNoteTitle] = useState('');
 
     const loadNoteFiles = async () => {
         const files = await window.api.getNoteFiles();
@@ -22,6 +23,7 @@ const NotesPage = () => {
         // The main process will construct the full path
         const result = await window.api.readNoteFile(fileName);
         if (result) {
+            setNoteTitle(fileName);
             setFilePath(result.filePath);
             try {
                 // We save notes as JSON, so we try to parse it.
@@ -60,6 +62,38 @@ const NotesPage = () => {
         return () => clearTimeout(handler);
     }, [content, filePath]);
 
+     // Debounced rename when the title changes
+     useEffect(() => {
+        if (!filePath || !noteTitle) {
+            return;
+        }
+
+        // This is a simple way to get the filename without the extension
+        // It's safer than using path manipulation in the renderer.
+        const pathParts = filePath.replace(/\\/g, '/').split('/');
+        const currentFileName = pathParts[pathParts.length - 1].replace(/\.json$/, '');
+
+        if (noteTitle === currentFileName) {
+            return; // No change needed
+        }
+
+        const handler = setTimeout(async () => {
+            setIsSaved(false);
+            const result = await window.api.renameNote(filePath, noteTitle);
+            if (result.success) {
+                setFilePath(result.filePath);
+                setNoteTitle(result.newFileName);
+                await loadNoteFiles();
+                setIsSaved(true);
+            } else {
+                alert(`Error renaming note: ${result.error}`);
+                setNoteTitle(currentFileName); // Revert to the old title
+            }
+        }, 500); // Debounce for 500ms
+
+        return () => clearTimeout(handler);
+    }, [noteTitle, filePath]);
+
 
     const handleContentUpdate = useCallback((newContent) => {
         // This function now only updates the local state.
@@ -81,6 +115,25 @@ const NotesPage = () => {
         }
     };
 
+    const handleDeleteNote = async (fileName) => {
+        const isConfirmed = window.confirm(`Are you sure you want to delete "${fileName}"?`);
+        if (isConfirmed) {
+            const result = await window.api.deleteNote(fileName);
+            if (result.success) {
+                await loadNoteFiles();
+                // If the deleted note was the one being edited, clear the editor
+                if (noteTitle === fileName) {
+                    setFilePath(null);
+                    setContent(null);
+                    setNoteTitle('');
+                }
+            } else {
+                alert(`Error deleting note: ${result.error}`);
+            }
+        }
+    };
+        
+
         
 
 
@@ -96,8 +149,11 @@ const NotesPage = () => {
             </div>
                 <div className="note-files-list">
                     {noteFiles.map((file) => (
-                        <div key={file} className="note-file-item" onClick={() => handleOpenFile(file)}>
-                            {file}
+                        <div key={file} className="note-file-item">
+                            <div className="note-file-item-opener" onClick={() => handleOpenFile(file)}>
+                                {file}
+                            </div>
+                            <button className="delete-note-btn" onClick={() => handleDeleteNote(file)} title={`Delete ${file}`}>&times;</button>
                         </div>
                     ))}
                 </div>
@@ -115,6 +171,15 @@ const NotesPage = () => {
             </aside>
             <main className="notes-main-content">
                 <div className="note-editor-panel">
+                    {filePath && (
+                        <input
+                            type="text"
+                            className="note-title-input"
+                            value={noteTitle}
+                            onChange={(e) => setNoteTitle(e.target.value)}
+                            placeholder="Note Title"
+                        />
+                    )}
                     <Tiptap content={content} onUpdate={handleContentUpdate} />
                 </div>
             </main>

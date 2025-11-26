@@ -44,6 +44,52 @@ ipcMain.handle('notes:getFiles', async () => {
   }
 });
 
+ipcMain.handle('notes:deleteFile', async (event, fileName) => {
+  const filePath = path.join(notesPath, `${fileName}.json`);
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return { success: true };
+    }
+    return { success: false, error: 'File not found.' };
+  } catch (err) {
+    console.error(`Failed to delete note file: ${filePath}`, err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('notes:renameFile', async (event, oldFilePath, newTitle) => {
+  if (!newTitle || typeof newTitle !== 'string' || newTitle.trim().length === 0) {
+    return { success: false, error: 'Invalid title provided.' };
+  }
+
+  const oldTitle = path.basename(oldFilePath, '.json');
+  if (oldTitle === newTitle) {
+    return { success: true, filePath: oldFilePath, newFileName: oldTitle }; // No change needed
+  }
+
+  // Sanitize the new title to create a valid filename
+  const sanitizedTitle = newTitle.replace(/[\\/:*?"<>|]/g, '');
+  let newFileName = sanitizedTitle;
+  let newFilePath = path.join(notesPath, `${newFileName}.json`);
+  let counter = 1;
+
+  // Ensure the new filename is unique by appending a number if it already exists
+  while (fs.existsSync(newFilePath)) {
+    newFileName = `${sanitizedTitle} (${counter})`;
+    newFilePath = path.join(notesPath, `${newFileName}.json`);
+    counter++;
+  }
+
+  try {
+    fs.renameSync(oldFilePath, newFilePath);
+    return { success: true, filePath: newFilePath, newFileName: newFileName };
+  } catch (err) {
+    console.error(`Failed to rename note from ${oldFilePath} to ${newFilePath}:`, err);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('notes:readFile', async (event, fileName) => {
   const filePath = path.join(notesPath, `${fileName}.json`);
   try {
@@ -90,24 +136,6 @@ ipcMain.handle('notes:createFile', async (event, title) => {
 
 
 
-ipcMain.handle('dialog:openFile', async () => {
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    filters: [{ name: 'Text Documents', extensions: ['json', 'txt', 'md'] }]
-  });
-  if (!canceled && filePaths.length > 0) {
-    const filePath = filePaths[0];
-    try {
-      const content = fs.readFileSync(filePath, 'utf-8');
-      return { filePath, content };
-    } catch (err) {
-      console.error('Failed to read file:', err);
-      return null;
-    }
-  }
-  return null;
-});
-
 ipcMain.on('file:save', (event, filePath, content) => {
   fs.writeFileSync(filePath, content);
 });
@@ -135,3 +163,4 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+

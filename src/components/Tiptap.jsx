@@ -4,7 +4,6 @@ import { TextStyleKit } from '@tiptap/extension-text-style'
 import { BubbleMenu } from '@tiptap/react/menus'
 import StarterKit from '@tiptap/starter-kit'
 import React, { useMemo, useEffect } from 'react'
-import { useCurrentEditor } from '@tiptap/react'
 
 
 
