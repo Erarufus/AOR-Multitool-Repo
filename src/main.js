@@ -1,3 +1,4 @@
+//imports
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -9,6 +10,8 @@ if (started) {
   app.quit();
 }
 
+
+//main window
 const createWindow = () => {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -19,7 +22,7 @@ const createWindow = () => {
     },
   });
 
-  // and load the index.html of the app.
+  // load app content
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
@@ -30,6 +33,8 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 };
 
+//file sys setup
+//defines path for notes dir and creates if not exist
 const notesPath = path.join(app.getPath('userData'), 'notes');
 if (!fs.existsSync(notesPath)) {
   fs.mkdirSync(notesPath, { recursive: true });
@@ -54,7 +59,8 @@ function getUniquePath(directory, name, extension = null) {
   return { uniqueName, uniquePath };
 }
 
-
+//ipc handlers
+//get a list of all folder names within notes dir
 ipcMain.handle('notes:getFolders', async () => {
   try {
     const dirents = fs.readdirSync(notesPath, { withFileTypes: true });
@@ -67,6 +73,7 @@ ipcMain.handle('notes:getFolders', async () => {
   }
 });
 
+//ipc get list of all notes + id in folder
 ipcMain.handle('notes:getNotesInFolder', async (event, folderName) => {
   const folderPath = path.join(notesPath, folderName);
   try {
@@ -80,6 +87,7 @@ ipcMain.handle('notes:getNotesInFolder', async (event, folderName) => {
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
         let data = JSON.parse(content);
+        //add uuid if not existent
         if (!data.id) {
           data.id = uuidv4();
           fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -97,6 +105,7 @@ ipcMain.handle('notes:getNotesInFolder', async (event, folderName) => {
   }
 });
 
+//create new folder w singualr name
 ipcMain.handle('notes:createFolder', async (event, folderName) => {
   if (!folderName || typeof folderName !== 'string' || folderName.trim().length === 0) {
     return { success: false, error: 'Invalid folder name.' };
@@ -111,7 +120,7 @@ ipcMain.handle('notes:createFolder', async (event, folderName) => {
     return { success: false, error: err.message };
   }
 });
-
+//delete file
 ipcMain.handle('notes:deleteFile', async (event, folderName, fileName) => {
   const filePath = path.join(notesPath, folderName, `${fileName}.json`);
   try {
@@ -125,7 +134,7 @@ ipcMain.handle('notes:deleteFile', async (event, folderName, fileName) => {
     return { success: false, error: err.message };
   }
 });
-
+//rename file safely
 ipcMain.handle('notes:renameFile', async (event, oldFilePath, newTitle) => {
   if (!newTitle || typeof newTitle !== 'string' || newTitle.trim().length === 0) {
     return { success: false, error: 'Invalid title provided.' };
@@ -150,7 +159,7 @@ ipcMain.handle('notes:renameFile', async (event, oldFilePath, newTitle) => {
     return { success: false, error: err.message };
   }
 });
-
+//read note file
 ipcMain.handle('notes:readFile', async (event, folderName, fileName) => {
   const filePath = path.join(notesPath, folderName, `${fileName}.json`);
   try {
@@ -162,10 +171,12 @@ ipcMain.handle('notes:readFile', async (event, folderName, fileName) => {
   }
 });
 
+//opem notes folder
 ipcMain.handle('notes:openFolder', () => {
   shell.openPath(notesPath);
 });
 
+//create new unique file +initial content
 ipcMain.handle('notes:createFile', async (event, folderName, title) => {
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     return { success: false, error: 'Invalid title provided.' };
@@ -187,7 +198,7 @@ ipcMain.handle('notes:createFile', async (event, folderName, title) => {
 });
 
 
-
+//save content
 ipcMain.handle('notes:saveFile', (event, filePath, content) => {
   try {
     fs.writeFileSync(filePath, content);
@@ -198,11 +209,11 @@ ipcMain.handle('notes:saveFile', (event, filePath, content) => {
   }
 });
 
-
+//electron app life extras
 app.whenReady().then(() => {
   createWindow();
 
-  // On OS X i
+  // On macos, standard behaviour
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -210,7 +221,7 @@ app.whenReady().then(() => {
   });
 });
 
-// Quit when all windows are closed, except on macOS. 
+// Quit when all windows are closed, except on macOS to maintain standard behaviour. 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

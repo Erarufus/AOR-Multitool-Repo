@@ -187,6 +187,59 @@
   font-weight: bold;
 }
 
+.sidebar-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.sidebar-tab-button {
+  flex-grow: 1;
+  padding: 0.75rem;
+  background-color: transparent;
+  color: #495057;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  width: 50%;
+  border-radius: 0;
+}
+
+.sidebar-tab-button:hover:not(:disabled) {
+  background-color: #e9ecef;
+}
+
+.sidebar-tab-button.active {
+  color: #9fa1f3;
+  border-bottom-color: #007bff;
+}
+
+.sidebar-tab-button:disabled {
+  color: #adb5bd;
+  cursor: not-allowed;
+}
+
+.sidebar-content {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-placeholder {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: #6c757d;
+}
+
 
 .sidebar-header {
   display: flex;

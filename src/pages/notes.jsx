@@ -1,4 +1,5 @@
 
+// imports
 import Tiptap from '../components/Tiptap.jsx';
 import React, { useState, useCallback, useEffect } from 'react';
 import '/src/index.css';
@@ -14,7 +15,10 @@ import {
     TextField,
 } from '@mui/material';
 
+
+// main page component, this is what gets exported, almost everything goes in here.
 const NotesPage = () => {
+    //state management, all variables that need to be passed out
     const [filePath, setFilePath] = useState(null);
     const [content, setContent] = useState(null);
     const [isSaved, setIsSaved] = useState(true);
@@ -26,7 +30,11 @@ const NotesPage = () => {
     const [folders, setFolders] = useState([]);
     const [currentFolder, setCurrentFolder] = useState(null);
     const [currentNoteId, setCurrentNoteId] = useState(null);
+    const [activeTab, setActiveTab] = useState('folders');
 
+    //functions called within the page
+
+    //clears editor text area
     const clearEditor = () => {
         setFilePath(null);
         setContent(null);
@@ -34,16 +42,21 @@ const NotesPage = () => {
         setCurrentNoteId(null);
     };
 
+
+    //fetches list of folders from main, sets initial folder
     const loadFolders = async () => {
         const folderList = await window.api.getFolders();
         setFolders(folderList);
-        if (folderList.length > 0 && !folderList.includes(currentFolder)) {
+        if (folderList.length > 0 && !currentFolder) {
             setCurrentFolder(folderList[0]);
+            setActiveTab('notes');
         } else if (folderList.length === 0) {
             setCurrentFolder(null);
+            setActiveTab('folders');
         }
     };
 
+    //fetches list of notes from the relevant folder from main
     const loadNotes = async (folderName) => {
         if (!folderName) {
             setNoteFiles([]);
@@ -53,17 +66,26 @@ const NotesPage = () => {
         setNoteFiles(files);
     };
 
+    //load list of folders when page loaded
     useEffect(() => {
         loadFolders();
     }, []);
 
+    //load notes when folder changes, clear editor
     useEffect(() => {
         loadNotes(currentFolder);
         clearEditor();
     }, [currentFolder]);
 
+    // event handling
+    //sets folder when selected, moves to notes page for user
+    const handleSelectFolder = (folderName) => {
+        setCurrentFolder(folderName);
+        setActiveTab('notes');
+    };
+
+    //reads a note from main, pushes to editor
     const handleOpenFile = async (fileName) => {
-        // The main process will construct the full path
         if (!currentFolder) return;
         const result = await window.api.readNoteFile(currentFolder, fileName);
         if (result) {
@@ -89,12 +111,14 @@ const NotesPage = () => {
         }
     };
 
+    //debounced live saving after user stops typing
     useEffect(() => {
         // Don't save if there's no file path or if content is null (initial state).
         if (!filePath || content === null) {
             return;
         }
 
+        //uuid
         const handler = setTimeout(async () => {
             const contentToSave = {
                 id: currentNoteId,
@@ -109,7 +133,7 @@ const NotesPage = () => {
                 alert(`Failed to save note: ${result.error}`);
                 setIsSaved(false);
             }
-        }, 400); // Wait x after the user stops typing to save.
+        }, 400); // Wait x after the user stops typing to save (ms)
 
         // This cleanup functio runs before the next effect or on unmount.
         // It clears the timeout, preventing the save if the content changes again quickly.
@@ -149,13 +173,14 @@ const NotesPage = () => {
     }, [noteTitle, filePath]);
 
 
+    //marks unsaved, updates state
     const handleContentUpdate = useCallback((newContent) => {
-        // This function now only updates the local state.
-        // The useEffect hook will handle the saving
         setIsSaved(false);
         setContent(newContent);
     }, []);   
     
+    //NOTE LINKING
+    //opens the the window for selecting note to link to
     const handleOpenLinkModal = () => {
         if (editorInstance && !editorInstance.state.selection.empty) {
             setSearchTerm('');
@@ -163,6 +188,7 @@ const NotesPage = () => {
         }
     };
 
+    //applies the link mark to the text
     const handleSetNoteLink = (targetNoteId) => {
         if (editorInstance) {
            
@@ -176,6 +202,7 @@ const NotesPage = () => {
         setIsLinkModalOpen(false);
     };
 
+    //handles clicks on note links
     const handleNoteLinkNavigation = (noteId) => {
         const targetNote = noteFiles.find(note => note.id === noteId);
         if (targetNote) {
@@ -185,17 +212,22 @@ const NotesPage = () => {
         }
     };
 
+
+    // file and folder management
+    //creates default folder
     const handleNewFolder = async () => {
         const folderName = "New Folder";
         const result = await window.api.createFolder(folderName);
         if (result.success) {
             await loadFolders();
-            setCurrentFolder(result.folderName);
+            handleSelectFolder(result.folderName);
+
         } else {
             alert(`Error creating folder: ${result.error}`);
         }
     };
 
+    //creates a new default note
     const handleNewNote = async () => {
         if (!currentFolder) {
             alert("Please select a folder first.");
@@ -211,6 +243,7 @@ const NotesPage = () => {
         }
     };
 
+    //deletes a note after confirmed
     const handleDeleteNote = async (fileName) => {
         if (!currentFolder) return;
         const isConfirmed = window.confirm(`Are you sure you want to delete "${fileName}"?`);
@@ -243,60 +276,91 @@ const NotesPage = () => {
 
 
     return (
+        //render
         <div className="notes-layout">
+            {/*sidebar contains folder and file navigation */}
             <aside className="notes-sidebar">
-            <div className="sidebar-section">
-                    <div className="sidebar-header">
-                        <h2>Folders</h2>
-                        <div className="sidebar-actions">
-                            <button onClick={handleNewFolder} title="New Folder">+</button>
-                            <button onClick={() => window.api.openNotesFolder()} title="Open Root Notes Folder">📂</button>
-                        </div>
-                    </div>
-                    <div className="folder-list">
-                        {folders.map(folder => (
-                            <div key={folder} className={`folder-item ${currentFolder === folder ? 'active' : ''}`} onClick={() => setCurrentFolder(folder)}>
-                                {folder}
-                            </div>
-                        ))}
-                    </div>
+                {/* tab buttons for folder/note navigation */}
+                <div className="sidebar-tabs">
+                    <button onClick={() => setActiveTab('folders')} className={`sidebar-tab-button ${activeTab === 'folders' ? 'active' : ''}`}>
+                        Folders
+                    </button>
+                    <button onClick={() => setActiveTab('notes')} className={`sidebar-tab-button ${activeTab === 'notes' ? 'active' : ''}`} disabled={!currentFolder}>
+                        Notes
+                    </button>
                 </div>
-                {currentFolder && (
-                    <div className="sidebar-section" style={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-                        <div className="sidebar-header">
-                            <h2>Notes in {currentFolder}</h2>
-                            <div className="sidebar-actions">
-                                <button onClick={handleNewNote} title="New Note">+</button>
+
+                {/* sidebar content */}
+                <div className="sidebar-content">
+                    {/* folders tab view*/}
+                    {activeTab === 'folders' && (
+                        <div className="sidebar-section">
+                            <div className="sidebar-header">
+                                <h2>Folders</h2>
+                                <div className="sidebar-actions">
+                                    <button onClick={handleNewFolder} title="New Folder">+</button>
+                                    <button onClick={() => window.api.openNotesFolder()} title="Open Root Notes Folder">📂</button>
+                                </div>
                             </div>
-                            </div>
-                        <div className="note-files-list">
-                            {noteFiles.map((note) => (
-                                <div key={note.id} className={`note-file-item ${note.title === noteTitle ? 'active' : ''}`}>
-                                    <div className="note-file-item-opener" onClick={() => handleOpenFile(note.title)} title={note.title}>
-                                        {note.title}
+                            <div className="folder-list">
+                                {folders.map(folder => (
+                                    <div key={folder} className={`folder-item ${currentFolder === folder ? 'active' : ''}`} onClick={() => handleSelectFolder(folder)}>
+                                        {folder}
                                     </div>
-                                    <div>
-                                    <IconButton onClick={() => handleDeleteNote(note.title)} title={`Delete ${note.title}`}><DeleteIcon /></IconButton>
+                                 ))}
+                                 </div>
+                             </div>
+                         )}
+                         {/* notes tab view*/}
+                         {activeTab === 'notes' && (
+                             <>
+                                 {currentFolder ? (
+                                     <div className="sidebar-section">
+                                         <div className="sidebar-header">
+                                             <h2>Notes in {currentFolder}</h2>
+                                             <div className="sidebar-actions">
+                                                 <button onClick={handleNewNote} title="New Note">+</button>
+                                             </div>    
+                                    </div>
+                                    <div className="note-files-list">
+                                        {noteFiles.map((note) => (
+                                            <div key={note.id} className={`note-file-item ${note.title === noteTitle ? 'active' : ''}`}>
+                                                <div className="note-file-item-opener" onClick={() => handleOpenFile(note.title)} title={note.title}>
+                                                    {note.title}
+                                                </div>
+                                                <div>
+                                                    <IconButton onClick={() => handleDeleteNote(note.title)} title={`Delete ${note.title}`}><DeleteIcon /></IconButton>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                                 ) : (
+                                    <div className="sidebar-placeholder">
+                                        <p>No folder selected.</p>
+                                        <p>Go to the "Folders" tab to select or create one.</p>
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
-                )}
-                <div className="file-status-panel">
-                    {filePath && (
-                        <div className="file-info">
-                            <strong>Editing:</strong>
-                            <p>{filePath}</p>
-                            <p className={isSaved ? 'status-saved' : 'status-unsaved'}>
+                    {/* bottom part of sidebar, incl save status*/}
+                    <div className="file-status-panel">
+                        {filePath && (
+                                <div className="file-info">
+                                <strong>Editing:</strong>
+                                <p>{filePath}</p>
+                                <p className={isSaved ? 'status-saved' : 'status-unsaved'}>
                                 {isSaved ? 'Saved' : 'Unsaved'}
-                            </p>
-                        </div>
-                    )}
-                </div>
+                                </p>
+                            </div>
+                        )}
+                    </div>
             </aside>
+            {/* editor content*/}
             <main className="notes-main-content">
                 <div className="note-editor-panel">
+                    {/* text area only open when possible file active */}
                     {filePath && (
                         <input
                             type="text"
@@ -315,6 +379,7 @@ const NotesPage = () => {
                     />
                 </div>
             </main>
+            {/* window for making note links */}
             <Dialog onClose={() => setIsLinkModalOpen(false)} open={isLinkModalOpen} fullWidth maxWidth="xs">
                 <DialogTitle>Link to another note</DialogTitle>
                 <TextField
