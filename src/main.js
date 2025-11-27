@@ -35,38 +35,85 @@ if (!fs.existsSync(notesPath)) {
   fs.mkdirSync(notesPath, { recursive: true });
 }
 
-ipcMain.handle('notes:getFiles', async () => {
-  try{
-    const fileNames = fs.readdirSync(notesPath).filter(file => file.endsWith('.json'));
+/**
+ * Generates a unique path for a file or folder by appending a number if the path already exists.
+ * @param {string} directory The directory where the item should be.
+ * @param {string} name The desired name for the item.
+ * @param {string|null} extension The file extension (or null for a directory).
+ * @returns {{uniqueName: string, uniquePath: string}}
+ */
+function getUniquePath(directory, name, extension = null) {
+  let uniqueName = name;
+  let uniquePath = path.join(directory, extension ? `${uniqueName}.${extension}` : uniqueName);
+  let counter = 1;
+  while (fs.existsSync(uniquePath)) {
+    uniqueName = `${name} (${counter})`;
+    uniquePath = path.join(directory, extension ? `${uniqueName}.${extension}` : uniqueName);
+    counter++;
+  }
+  return { uniqueName, uniquePath };
+}
+
+
+ipcMain.handle('notes:getFolders', async () => {
+  try {
+    const dirents = fs.readdirSync(notesPath, { withFileTypes: true });
+    return dirents
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
+  } catch (err) {
+    console.error('Failed to read folders from notes directory:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('notes:getNotesInFolder', async (event, folderName) => {
+  const folderPath = path.join(notesPath, folderName);
+  try {
+    if (!fs.existsSync(folderPath)) {
+      return [];
+    }
+    const fileNames = fs.readdirSync(folderPath).filter(file => file.endsWith('.json'));
     const notesData = fileNames.map(fileName => {
-    const filePath = path.join(notesPath, fileName);
-    const title = fileName.replace(/\.json$/, '');
+      const filePath = path.join(folderPath, fileName);
+      const title = fileName.replace(/\.json$/, '');
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
         let data = JSON.parse(content);
-
-        // On-the-fly migration for old notes without IDs
         if (!data.id) {
           data.id = uuidv4();
           fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         }
         return { id: data.id, title };
       } catch (e) {
-        // If file is malformed or empty, we can't get an ID. Skip it.
-        console.error(`Could not read or parse ${fileName}:`, e);
+        console.error(`Could not read or parse ${fileName} in ${folderName}:`, e);
         return null;
       }
     });
-    // Filter out any nulls from failed reads
     return notesData.filter(note => note !== null);
-  }catch(err){
-    console.error('Failed to read notes directory', err);
-    return[];
+  } catch (err) {
+    console.error(`Failed to read notes from ${folderName}:`, err);
+    return [];
   }
 });
 
-ipcMain.handle('notes:deleteFile', async (event, fileName) => {
-  const filePath = path.join(notesPath, `${fileName}.json`);
+ipcMain.handle('notes:createFolder', async (event, folderName) => {
+  if (!folderName || typeof folderName !== 'string' || folderName.trim().length === 0) {
+    return { success: false, error: 'Invalid folder name.' };
+  }
+  const sanitizedName = folderName.replace(/[\\/:*?"<>|]/g, '');
+  const { uniqueName, uniquePath: newFolderPath } = getUniquePath(notesPath, sanitizedName);
+  try {
+    fs.mkdirSync(newFolderPath);
+    return { success: true, folderName: uniqueName };
+  } catch (err) {
+    console.error('Failed to create new folder:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('notes:deleteFile', async (event, folderName, fileName) => {
+  const filePath = path.join(notesPath, folderName, `${fileName}.json`);
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
@@ -89,18 +136,11 @@ ipcMain.handle('notes:renameFile', async (event, oldFilePath, newTitle) => {
     return { success: true, filePath: oldFilePath, newFileName: oldTitle }; // No change needed
   }
 
+  const folderPath = path.dirname(oldFilePath);
+
   // Sanitize the new title to create a valid filename
   const sanitizedTitle = newTitle.replace(/[\\/:*?"<>|]/g, '');
-  let newFileName = sanitizedTitle;
-  let newFilePath = path.join(notesPath, `${newFileName}.json`);
-  let counter = 1;
-
-  // Ensure the new filename is unique by appending a number if it already exists
-  while (fs.existsSync(newFilePath)) {
-    newFileName = `${sanitizedTitle} (${counter})`;
-    newFilePath = path.join(notesPath, `${newFileName}.json`);
-    counter++;
-  }
+  const { uniqueName: newFileName, uniquePath: newFilePath } = getUniquePath(folderPath, sanitizedTitle, 'json');
 
   try {
     fs.renameSync(oldFilePath, newFilePath);
@@ -111,8 +151,8 @@ ipcMain.handle('notes:renameFile', async (event, oldFilePath, newTitle) => {
   }
 });
 
-ipcMain.handle('notes:readFile', async (event, fileName) => {
-  const filePath = path.join(notesPath, `${fileName}.json`);
+ipcMain.handle('notes:readFile', async (event, folderName, fileName) => {
+  const filePath = path.join(notesPath, folderName, `${fileName}.json`);
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     return { filePath, content };
@@ -126,29 +166,19 @@ ipcMain.handle('notes:openFolder', () => {
   shell.openPath(notesPath);
 });
 
-ipcMain.handle('notes:createFile', async (event, title) => {
+ipcMain.handle('notes:createFile', async (event, folderName, title) => {
   if (!title || typeof title !== 'string' || title.trim().length === 0) {
     return { success: false, error: 'Invalid title provided.' };
   }
-    // Sanitize filename to remove invalid characters
-    const sanitizedTitle = title.replace(/[\\/:*?"<>|]/g, '');
-    let newFileName = sanitizedTitle;
-    let newFilePath = path.join(notesPath, `${newFileName}.json`);
-    let counter = 1;
-    
-    // Ensure filename is unique by appending a number if it exists
-    while (fs.existsSync(newFilePath)) {
-      newFileName = `${sanitizedTitle} (${counter})`;
-      newFilePath = path.join(notesPath, `${newFileName}.json`);
-      counter++;
-    }
-    try {
-      const noteId = uuidv4();
-      // Create an empty note file with a valid Tiptap/ProseMirror structure
-      const initialContent = { id: noteId, type: 'doc', content: [{ type: 'paragraph' }] };
-      fs.writeFileSync(newFilePath, JSON.stringify(initialContent, null, 2));
-      // Return the name (without extension) and the full path
-      return { success: true, fileName: newFileName, filePath: newFilePath };
+  const folderPath = path.join(notesPath, folderName);
+  // Sanitize filename to remove invalid characters
+  const sanitizedTitle = title.replace(/[\\/:*?"<>|]/g, '');
+  const { uniqueName: newFileName, uniquePath: newFilePath } = getUniquePath(folderPath, sanitizedTitle, 'json');
+  try {
+    const noteId = uuidv4();
+    const initialContent = { id: noteId, type: 'doc', content: [{ type: 'paragraph' }] };
+    fs.writeFileSync(newFilePath, JSON.stringify(initialContent, null, 2));
+    return { success: true, fileName: newFileName, filePath: newFilePath };
   } catch (err) {
     console.error('Failed to create new note file:', err);
     return { success: false, error: err.message };
@@ -158,8 +188,14 @@ ipcMain.handle('notes:createFile', async (event, title) => {
 
 
 
-ipcMain.on('file:save', (event, filePath, content) => {
-  fs.writeFileSync(filePath, content);
+ipcMain.handle('notes:saveFile', (event, filePath, content) => {
+  try {
+    fs.writeFileSync(filePath, content);
+    return { success: true };
+  } catch (err) {
+    console.error('Failed to save file:', err);
+    return { success: false, error: err.message };
+  }
 });
 
 // This method will be called when Electron has finished

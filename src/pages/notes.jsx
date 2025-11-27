@@ -23,26 +23,58 @@ const NotesPage = () => {
     const [editorInstance, setEditorInstance] = useState(null);
     const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [folders, setFolders] = useState([]);
+    const [currentFolder, setCurrentFolder] = useState(null);
+    const [currentNoteId, setCurrentNoteId] = useState(null);
 
-    const loadNoteFiles = async () => {
-        const files = await window.api.getNoteFiles();
+    const clearEditor = () => {
+        setFilePath(null);
+        setContent(null);
+        setNoteTitle('');
+        setCurrentNoteId(null);
+    };
+
+    const loadFolders = async () => {
+        const folderList = await window.api.getFolders();
+        setFolders(folderList);
+        if (folderList.length > 0 && !folderList.includes(currentFolder)) {
+            setCurrentFolder(folderList[0]);
+        } else if (folderList.length === 0) {
+            setCurrentFolder(null);
+        }
+    };
+
+    const loadNotes = async (folderName) => {
+        if (!folderName) {
+            setNoteFiles([]);
+            return;
+        }
+        const files = await window.api.getNotesInFolder(folderName);
         setNoteFiles(files);
     };
 
     useEffect(() => {
-        loadNoteFiles();
+        loadFolders();
     }, []);
+
+    useEffect(() => {
+        loadNotes(currentFolder);
+        clearEditor();
+    }, [currentFolder]);
 
     const handleOpenFile = async (fileName) => {
         // The main process will construct the full path
-        const result = await window.api.readNoteFile(fileName);
+        if (!currentFolder) return;
+        const result = await window.api.readNoteFile(currentFolder, fileName);
         if (result) {
             setNoteTitle(fileName);
             setFilePath(result.filePath);
             try {
                 // We save notes as JSON, so we try to parse it.
                 const parsedContent = JSON.parse(result.content);
-                setContent(parsedContent);
+                setCurrentNoteId(parsedContent.id);
+                const { id, ...tiptapContent } = parsedContent;
+                setContent(tiptapContent);
             } catch (error) {
                 // If it's not JSON we treat it as plain text.
                 console.warn("File content is not valid JSON. Treating as plain text.", error);
@@ -53,6 +85,7 @@ const NotesPage = () => {
                         ...(result.content && { content: [{ type: 'text', text: result.content }] }),
                     }],
                 });
+                setCurrentNoteId(null);
             }
             setIsSaved(true);
         }
@@ -64,11 +97,20 @@ const NotesPage = () => {
             return;
         }
 
-        const handler = setTimeout(() => {
-            const contentString = JSON.stringify(content, null, 2);
-            window.api.saveFile(filePath, contentString);
-            loadNoteFiles(); // Refresh file list after saving
-            setIsSaved(true);
+        const handler = setTimeout(async () => {
+            const contentToSave = {
+                id: currentNoteId,
+                ...content,
+            };
+            const contentString = JSON.stringify(contentToSave, null, 2);
+            const result = await window.api.saveFile(filePath, contentString);
+            if (result.success) {
+                setIsSaved(true);
+            } else {
+                // If saving fails, show an error and don't pretend it's saved.
+                alert(`Failed to save note: ${result.error}`);
+                setIsSaved(false);
+            }
         }, 400); // Wait x after the user stops typing to save.
 
         // This cleanup functio runs before the next effect or on unmount.
@@ -97,7 +139,7 @@ const NotesPage = () => {
             if (result.success) {
                 setFilePath(result.filePath);
                 setNoteTitle(result.newFileName);
-                await loadNoteFiles();
+                await loadNotes(currentFolder);
                 setIsSaved(true);
             } else {
                 alert(`Error renaming note: ${result.error}`);
@@ -145,38 +187,50 @@ const NotesPage = () => {
         }
     };
 
+    const handleNewFolder = async () => {
+        const folderName = "New Folder";
+        const result = await window.api.createFolder(folderName);
+        if (result.success) {
+            await loadFolders();
+            setCurrentFolder(result.folderName);
+        } else {
+            alert(`Error creating folder: ${result.error}`);
+        }
+    };
+
     const handleNewNote = async () => {
+        if (!currentFolder) {
+            alert("Please select a folder first.");
+            return;
+        }
         const title = "Untitled Note";
-        if (title) { // Keep this check in case a cancelable modal is added later
-            const result = await window.api.createNote(title);
-            if (result.success) {
-                await loadNoteFiles(); // Refresh the file list
-                handleOpenFile(result.fileName); // Open the new note
-            } else {
-                alert(`Error creating note: ${result.error}`);
-            }
+        const result = await window.api.createNote(currentFolder, title);
+        if (result.success) {
+            await loadNotes(currentFolder);
+            handleOpenFile(result.fileName);
+        } else {
+            alert(`Error creating note: ${result.error}`);
         }
     };
 
     const handleDeleteNote = async (fileName) => {
+        if (!currentFolder) return;
         const isConfirmed = window.confirm(`Are you sure you want to delete "${fileName}"?`);
         if (isConfirmed) {
             const wasActiveNote = noteTitle === fileName;
-            const deleteResult = await window.api.deleteNote(fileName);
+            const deleteResult = await window.api.deleteNote(currentFolder, fileName);
 
             if (deleteResult.success) {
-                const updatedFiles = await window.api.getNoteFiles();
-                setNoteFiles(updatedFiles);
+                const updatedNotes = await window.api.getNotesInFolder(currentFolder);
+                setNoteFiles(updatedNotes);
 
                 if (wasActiveNote) {
-                    if (updatedFiles.length > 0) {
+                    if (updatedNotes.length > 0) {
                         // Open the first note in the new list
-                        handleOpenFile(updatedFiles[0].title);
+                        handleOpenFile(updatedNotes[0].title);
                     } else {
                         // No files left, so clear the editor
-                        setFilePath(null);
-                        setContent(null);
-                        setNoteTitle('');
+                        clearEditor();
                     }
                 }
             } else {
@@ -193,35 +247,54 @@ const NotesPage = () => {
     return (
         <div className="notes-layout">
             <aside className="notes-sidebar">
-            <div className="sidebar-header">
-                <h2>Notes</h2>
-                <div className="sidebar-actions">
-                    <button onClick={handleNewNote} title="New Note">+</button>
-                    <button onClick={() => window.api.openNotesFolder()} title="Open Notes Folder">📂</button>
-                </div>
-            </div>
-                <div className="note-files-list">
-                {noteFiles.map((note) => (
-                        <div key={note.id} className={`note-file-item ${note.title === noteTitle ? 'active' : ''}`}>
-                            <div className="note-file-item-opener" onClick={() => handleOpenFile(note.title)} title={note.title}>
-                                {note.title}
-                            </div>
-                            <div>
-                            <IconButton onClick={() => handleDeleteNote(note.title)} title={`Delete ${note.title}`}><DeleteIcon /></IconButton>
-                            </div>
+            <div className="sidebar-section">
+                    <div className="sidebar-header">
+                        <h2>Folders</h2>
+                        <div className="sidebar-actions">
+                            <button onClick={handleNewFolder} title="New Folder">+</button>
+                            <button onClick={() => window.api.openNotesFolder()} title="Open Root Notes Folder">📂</button>
                         </div>
-                    ))}
+                    </div>
+                    <div className="folder-list">
+                        {folders.map(folder => (
+                            <div key={folder} className={`folder-item ${currentFolder === folder ? 'active' : ''}`} onClick={() => setCurrentFolder(folder)}>
+                                {folder}
+                            </div>
+                        ))}
+                    </div>
                 </div>
+                {currentFolder && (
+                    <div className="sidebar-section" style={{ flexGrow: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <div className="sidebar-header">
+                            <h2>Notes in {currentFolder}</h2>
+                            <div className="sidebar-actions">
+                                <button onClick={handleNewNote} title="New Note">+</button>
+                            </div>
+                            </div>
+                        <div className="note-files-list">
+                            {noteFiles.map((note) => (
+                                <div key={note.id} className={`note-file-item ${note.title === noteTitle ? 'active' : ''}`}>
+                                    <div className="note-file-item-opener" onClick={() => handleOpenFile(note.title)} title={note.title}>
+                                        {note.title}
+                                    </div>
+                                    <div>
+                                    <IconButton onClick={() => handleDeleteNote(note.title)} title={`Delete ${note.title}`}><DeleteIcon /></IconButton>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 <div className="file-status-panel">
                     {filePath && (
-                    <div className="file-info">
-                        <strong>Editing:</strong>
-                        <p>{filePath}</p>
-                        <p className={isSaved ? 'status-saved' : 'status-unsaved'}>
-                            {isSaved ? 'Saved' : 'Unsaved'}
-                        </p>
-                    </div>
-                    )}  
+                        <div className="file-info">
+                            <strong>Editing:</strong>
+                            <p>{filePath}</p>
+                            <p className={isSaved ? 'status-saved' : 'status-unsaved'}>
+                                {isSaved ? 'Saved' : 'Unsaved'}
+                            </p>
+                        </div>
+                    )}
                 </div>
             </aside>
             <main className="notes-main-content">

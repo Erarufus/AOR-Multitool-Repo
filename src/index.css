@@ -152,6 +152,42 @@
   color: white;
 }
 
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-bottom: 1px solid #dee2e6;
+  padding-bottom: 1rem;
+}
+
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.folder-item {
+  padding: 0.75rem;
+  background-color: #ffffff;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.folder-item:hover {
+  background-color: #e9ecef;
+}
+
+.folder-item.active {
+  border-color: #6c757d;
+  background-color: #e9ecef;
+  font-weight: bold;
+}
+
+
 .sidebar-header {
   display: flex;
   justify-content: space-between;
