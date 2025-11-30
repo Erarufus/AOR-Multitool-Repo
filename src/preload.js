@@ -12,4 +12,8 @@ contextBridge.exposeInMainWorld('api', {
     openNotesFolder: () => ipcRenderer.invoke('notes:openFolder'),
     renameNote: (oldFilePath, newTitle) => ipcRenderer.invoke('notes:renameFile', oldFilePath, newTitle),
     deleteNote: (folderName, fileName) => ipcRenderer.invoke('notes:deleteFile', folderName, fileName),
+    searchFoods: (term) => ipcRenderer.invoke('foods:search', term),
+    loadFoodsForDate: (dateString) => ipcRenderer.invoke('diet:loadFoods', dateString),
+    saveFoodsForDate: (dateString, foods) => ipcRenderer.invoke('diet:saveFoods', dateString, foods),
+    getFoodDetails: (foodName) => ipcRenderer.invoke('foods:getDetails', foodName),
   });

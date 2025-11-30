@@ -55,28 +55,28 @@ function MenuBar({editor, onLinkButtonClick}) {
         <button
           onClick={() => editor.chain().focus().toggleItalic().run()}
           disabled={!editorState.canItalic}
-          className={editorState.isItalic ? 'is-active' : ''}
+          className={editorState.isItalic ? 'active' : ''}
         >
           Italic
         </button>
         <button
           onClick={() => editor.chain().focus().toggleStrike().run()}
           disabled={!editorState.canStrike}
-          className={editorState.isStrike ? 'is-active' : ''}
+          className={editorState.isStrike ? 'active' : ''}
         >
           Strike
         </button>
         <button
           onClick={() => editor.chain().focus().toggleCode().run()}
           disabled={!editorState.canCode}
-          className={editorState.isCode ? 'is-active' : ''}
+          className={editorState.isCode ? 'active' : ''}
         >
           Code
         </button>
         <button
           onClick={onLinkButtonClick}
           disabled={!editorState.canSetNoteLink}
-          className={editorState.isNoteLink ? 'is-active' : ''}
+          className={editorState.isNoteLink ? 'active' : ''}
         >
           Link to Note
         </button>
@@ -87,67 +87,67 @@ function MenuBar({editor, onLinkButtonClick}) {
         <button onClick={() => editor.chain().focus().clearNodes().run()}>Clear nodes</button>
         <button
           onClick={() => editor.chain().focus().setParagraph().run()}
-          className={editorState.isParagraph ? 'is-active' : ''}
+          className={editorState.isParagraph ? 'active' : ''}
         >
           Paragraph
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-          className={editorState.isHeading1 ? 'is-active' : ''}
+          className={editorState.isHeading1 ? 'active' : ''}
         >
           H1
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          className={editorState.isHeading2 ? 'is-active' : ''}
+          className={editorState.isHeading2 ? 'active' : ''}
         >
           H2
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          className={editorState.isHeading3 ? 'is-active' : ''}
+          className={editorState.isHeading3 ? 'active' : ''}
         >
           H3
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
-          className={editorState.isHeading4 ? 'is-active' : ''}
+          className={editorState.isHeading4 ? 'active' : ''}
         >
           H4
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
-          className={editorState.isHeading5 ? 'is-active' : ''}
+          className={editorState.isHeading5 ? 'active' : ''}
         >
           H5
         </button>
         <button
           onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
-          className={editorState.isHeading6 ? 'is-active' : ''}
+          className={editorState.isHeading6 ? 'active' : ''}
         >
           H6
         </button>
         <button
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={editorState.isBulletList ? 'is-active' : ''}
+          className={editorState.isBulletList ? 'active' : ''}
         >
           Bullet list
         </button>
         <button
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={editorState.isOrderedList ? 'is-active' : ''}
+          className={editorState.isOrderedList ? 'active' : ''}
         >
           Ordered list
         </button>
         <button
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-          className={editorState.isCodeBlock ? 'is-active' : ''}
+          className={editorState.isCodeBlock ? 'active' : ''}
         >
           Code block
         </button>
         <button
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
-          className={editorState.isBlockquote ? 'is-active' : ''}
+          className={editorState.isBlockquote ? 'active' : ''}
         >
           Blockquote
         </button>

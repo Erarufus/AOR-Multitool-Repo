@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import started from 'electron-squirrel-startup';
 import { v4 as uuidv4 } from 'uuid';
+import csv from 'csv-parser';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -38,6 +39,12 @@ const createWindow = () => {
 const notesPath = path.join(app.getPath('userData'), 'notes');
 if (!fs.existsSync(notesPath)) {
   fs.mkdirSync(notesPath, { recursive: true });
+}
+
+//defines path for diet data dir and creates if not exist
+const dietPath = path.join(app.getPath('userData'), 'diet');
+if (!fs.existsSync(dietPath)) {
+  fs.mkdirSync(dietPath, { recursive: true });
 }
 
 /**
@@ -87,12 +94,24 @@ ipcMain.handle('notes:getNotesInFolder', async (event, folderName) => {
       try {
         const content = fs.readFileSync(filePath, 'utf-8');
         let data = JSON.parse(content);
+        let needsUpdate = false;
         //add uuid if not existent
+        
         if (!data.id) {
           data.id = uuidv4();
+          needsUpdate = true;
+        }
+        // Add lastOpened if it doesn't exist, using file's modification time as a fallback.
+        if (typeof data.lastOpened === 'undefined') {
+          const stats = fs.statSync(filePath);
+          data.lastOpened = stats.mtime.getTime();
+          needsUpdate = true;
+        }
+
+        if (needsUpdate) {
           fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
         }
-        return { id: data.id, title };
+        return { id: data.id, title, lastOpened: data.lastOpened };
       } catch (e) {
         console.error(`Could not read or parse ${fileName} in ${folderName}:`, e);
         return null;
@@ -163,8 +182,14 @@ ipcMain.handle('notes:renameFile', async (event, oldFilePath, newTitle) => {
 ipcMain.handle('notes:readFile', async (event, folderName, fileName) => {
   const filePath = path.join(notesPath, folderName, `${fileName}.json`);
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return { filePath, content };
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    const data = JSON.parse(fileContent);
+
+    // Update last opened timestamp
+    data.lastOpened = Date.now();
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+
+    return { filePath, content: JSON.stringify(data) };
   } catch (err) {
     console.error('Failed to read file:', err);
     return null;
@@ -187,7 +212,12 @@ ipcMain.handle('notes:createFile', async (event, folderName, title) => {
   const { uniqueName: newFileName, uniquePath: newFilePath } = getUniquePath(folderPath, sanitizedTitle, 'json');
   try {
     const noteId = uuidv4();
-    const initialContent = { id: noteId, type: 'doc', content: [{ type: 'paragraph' }] };
+    const initialContent = {
+      id: noteId,
+      lastOpened: Date.now(),
+      type: 'doc',
+      content: [{ type: 'paragraph' }]
+    };
     fs.writeFileSync(newFilePath, JSON.stringify(initialContent, null, 2));
     return { success: true, fileName: newFileName, filePath: newFilePath };
   } catch (err) {
@@ -206,6 +236,107 @@ ipcMain.handle('notes:saveFile', (event, filePath, content) => {
   } catch (err) {
     console.error('Failed to save file:', err);
     return { success: false, error: err.message };
+  }
+});
+
+//Food Search Logic 
+
+let foodDataCache = null; // Start as null
+let foodDataLoadingPromise = null; // To store the promise while loading
+
+function loadFoodDataFromCSV() {
+   // This function will now return a Promise that resolves with the data
+   return new Promise((resolve, reject) => {
+    try {
+      let filePath;
+      if (app.isPackaged) {
+        filePath = path.join(process.resourcesPath, 'assets', 'MyFoodData.csv');
+      } else {
+        filePath = path.join(app.getAppPath(), 'assets', 'MyFoodData.csv');
+      }
+
+      if (!fs.existsSync(filePath)) {
+        return reject(new Error(`Food data file not found at path: ${filePath}`));
+      }
+      
+      const results = [];
+      fs.createReadStream(filePath)
+        .pipe(csv())
+        .on('data', (data) => results.push(data))
+        .on('end', () => {
+          console.log(`[loadFoodDataFromCSV] Successfully loaded and parsed ${results.length} food items.`);
+          resolve(results); // Resolve the promise with the data
+        })
+        .on('error', (error) => {
+            console.error('Failed to parse CSV file:', error);
+            reject(error);
+        });
+    } catch (error) {
+      console.error('Failed to load food data file:', error);
+      reject(error);
+    }
+  });
+}
+
+/**
+ * Asynchronously returns the food data. If not cached, it loads from the CSV.
+ */
+async function getFoodData() {
+  if (!foodDataLoadingPromise) {
+    foodDataLoadingPromise = loadFoodDataFromCSV();
+  }
+  foodDataCache = await foodDataLoadingPromise;
+  return foodDataCache;
+}
+
+ipcMain.handle('foods:search', async (event, searchTerm) => {
+  const allFoodObjects = await getFoodData();
+  if (!searchTerm || searchTerm.trim().length < 2) {
+    return [];
+  }
+  const lowerCaseSearchTerm = searchTerm.toLowerCase();
+  const results = allFoodObjects
+    // EDIT 'name' to the column header for the food
+     .filter(food => food['name'] && typeof food['name'] === 'string' && food['name'].toLowerCase().includes(lowerCaseSearchTerm))
+     .map(food => food['name']) // This extracts just the name string for the frontend
+    .slice(0, 25); // Return top 25 matches
+  return results;
+});
+
+ipcMain.handle('foods:getDetails', async (event, foodName) => {
+  const allFoodObjects = await getFoodData();
+  if (!foodName) {
+    return null;
+  }
+  // EDIT 'name' to the column header for the food
+  const foodDetails = allFoodObjects.find(food => food['name'] === foodName);
+  return foodDetails || null;
+});
+
+ipcMain.handle('diet:loadFoods', async (event, dateString) => {
+  const filePath = path.join(dietPath, `${dateString}.json`);
+  try {
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(data);
+    }
+    return []; // Return empty array if file doesn't exist
+  } catch (error) {
+    console.error(`Failed to load foods for ${dateString}:`, error);
+    return []; // Return empty array on error
+  }
+});
+
+ipcMain.handle('diet:saveFoods', async (event, dateString, foods) => {
+  const filePath = path.join(dietPath, `${dateString}.json`);
+  try {
+    // To keep the directory clean, we'll write the file only if there are foods.
+    // If the list is empty, we'll ensure the file is deleted if it exists.
+    fs.writeFileSync(filePath, JSON.stringify(foods, null, 2));
+    return { success: true };
+  } catch (error) {
+    console.error(`Failed to save foods for ${dateString}:`, error);
+    return { success: false, error: error.message };
   }
 });
 

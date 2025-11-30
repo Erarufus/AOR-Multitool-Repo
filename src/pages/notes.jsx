@@ -60,10 +60,13 @@ const NotesPage = () => {
     const loadNotes = async (folderName) => {
         if (!folderName) {
             setNoteFiles([]);
-            return;
+            return[];
         }
         const files = await window.api.getNotesInFolder(folderName);
-        setNoteFiles(files);
+        // Sort by lastOpened timestamp in descending order (most recent first)
+        const sortedFiles = files.sort((a, b) => b.lastOpened - a.lastOpened);
+        setNoteFiles(sortedFiles);
+        return sortedFiles;
     };
 
     //load list of folders when page loaded
@@ -89,12 +92,14 @@ const NotesPage = () => {
         if (!currentFolder) return;
         const result = await window.api.readNoteFile(currentFolder, fileName);
         if (result) {
+            await loadNotes(currentFolder);
             setNoteTitle(fileName);
             setFilePath(result.filePath);
             try {
                 const parsedContent = JSON.parse(result.content);
                 setCurrentNoteId(parsedContent.id);
-                const { id, ...tiptapContent } = parsedContent;
+                // lastOpened is also in parsedContent, so we strip it out before sending to editor
+                const { id, lastOpened, ...tiptapContent } = parsedContent;
                 setContent(tiptapContent);
             } catch (error) {
                 console.warn("File content is not valid JSON. Treating as plain text.", error);
@@ -252,8 +257,7 @@ const NotesPage = () => {
             const deleteResult = await window.api.deleteNote(currentFolder, fileName);
 
             if (deleteResult.success) {
-                const updatedNotes = await window.api.getNotesInFolder(currentFolder);
-                setNoteFiles(updatedNotes);
+                const updatedNotes = await loadNotes(currentFolder);
 
                 if (wasActiveNote) {
                     if (updatedNotes.length > 0) {
