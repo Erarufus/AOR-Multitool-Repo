@@ -25,6 +25,7 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import SettingsIcon from '@mui/icons-material/Settings';
 
 import dayjs from 'dayjs'; // For date manipulation and formatting
 
@@ -37,15 +38,37 @@ const DietPage = () => {
     const [foodSearchTerm, setFoodSearchTerm] = useState('');
     const [foodSuggestions, setFoodSuggestions] = useState([]);
     const [todaysFoods, setTodaysFoods] = useState([]);
-
     const [isGramModalOpen, setIsGramModalOpen] = useState(false);
-    const [foodToAdd, setFoodToAdd] = useState(null);
+    const [foodDetailsForModal, setFoodDetailsForModal] = useState(null);
     const [gramAmount, setGramAmount] = useState('');
 
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [foodToEdit, setFoodToEdit] = useState(null);
+    const [isDietSettingsModalOpen, setIsDietSettingsModalOpen] = useState(false);
+    const [goals, setGoals] = useState({ kcal: 2000, protein: 120, fiber: 30 });
+    const [tempGoals, setTempGoals] = useState({ kcal: 2000, protein: 120, fiber: 30 });
 
     const isInitialLoad = useRef(true);
+
+    useEffect(() => {
+        try {
+            const savedGoals = localStorage.getItem('dietGoals');
+            if (savedGoals) {
+                const parsedGoals = JSON.parse(savedGoals);
+                // Basic validation
+                if (parsedGoals.kcal !== undefined && parsedGoals.protein !== undefined && parsedGoals.fiber !== undefined) {
+                    setGoals(parsedGoals);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to parse diet goals from localStorage", error);
+        }
+    }, []);
+
+    // Save goals to localStorage whenever they change
+    useEffect(() => {
+        localStorage.setItem('dietGoals', JSON.stringify(goals));
+    }, [goals]);
 
      // Debounced search effect
      useEffect(() => {
@@ -87,26 +110,27 @@ const DietPage = () => {
     }, [todaysFoods]);
 
 
-    const handleSelectFood = (event, newValue) => {
+    const handleSelectFood = async (event, newValue) => {
         if (newValue) {
-            setFoodToAdd(newValue);
+            const details = await window.api.getFoodDetails(newValue);
+            setFoodDetailsForModal(details);
             setIsGramModalOpen(true);
         }
     };
 
     const handleCloseGramModal = () => {
         setIsGramModalOpen(false);
-        setFoodToAdd(null);
+        setFoodDetailsForModal(null);
         setGramAmount('');
     };
 
     const handleConfirmAddFood = async () => {
         const grams = parseFloat(gramAmount);
-        if (!foodToAdd || !grams || grams <= 0) {
+        if (!foodDetailsForModal || !grams || grams <= 0) {
             return; // Basic validation
         }
 
-        const foodDetails = await window.api.getFoodDetails(foodToAdd);
+        const foodDetails = foodDetailsForModal;
 
         // Helper to safely parse nutrient values 
         const parseNutrient = (value) => {
@@ -116,7 +140,7 @@ const DietPage = () => {
 
         const newFoodEntry = {
             id: uuidv4(),
-            name: foodToAdd,
+            name: foodDetails.name,
             grams: grams,
             protein: 0,
             kcal: 0,
@@ -170,6 +194,28 @@ const DietPage = () => {
         handleCloseEditModal();
     };
 
+    const handleOpenDietSettingsModal = () => {
+        setTempGoals(goals); // Load current goals into the modal's temporary state
+        setIsDietSettingsModalOpen(true);
+    };
+
+    const handleCloseDietSettingsModal = () => {
+        setIsDietSettingsModalOpen(false);
+    };
+
+    const handleGoalChange = (e) => {
+        const { name, value } = e.target;
+        setTempGoals(prev => ({
+            ...prev,
+            [name]: value === '' ? '' : parseFloat(value) || 0
+        }));
+    };
+
+    const handleSaveGoals = () => {
+        setGoals(tempGoals);
+        handleCloseDietSettingsModal();
+    };
+
     const totals = todaysFoods.reduce(
         (acc, food) => {
             if (typeof food === 'object' && food !== null) {
@@ -195,6 +241,13 @@ const DietPage = () => {
                     >
                         <CalendarTodayIcon />
                     </IconButton>
+                    <IconButton
+                        onClick={handleOpenDietSettingsModal}
+                        size="small"
+                        color="inherit"
+                    >
+                        <SettingsIcon />
+                    </IconButton>
                 </p>
                 <LocalizationProvider dateAdapter={AdapterDayjs}>
                     <DatePicker
@@ -218,7 +271,7 @@ const DietPage = () => {
             <div className="diet-content-container">
                 <div className="food-panel">
                     <Autocomplete
-                        // By setting value to null, the component clears after selection
+                        //setting value to null,component clears after selection
                         value={null} 
                         freeSolo
                         options={foodSuggestions}
@@ -229,10 +282,10 @@ const DietPage = () => {
                         renderInput={(params) => <TextField {...params} label="Search for a food..." variant="outlined" size="small" />}
                         sx={{ width: '100%', marginBottom: '1rem' }}
                     />
-                     <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: '4px', mb: 2, display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 2 }}>
-                        <Typography variant="body2">Calories: <strong>{totals.kcal.toFixed(0)} kcal</strong></Typography>
-                        <Typography variant="body2">Protein: <strong>{totals.protein.toFixed(1)} g</strong></Typography>
-                        <Typography variant="body2">Fiber: <strong>{totals.fiber.toFixed(1)} g</strong></Typography>
+                    <Box sx={{ p: 1, border: '1px solid', borderColor: 'divider', borderRadius: '4px', mb: 2, display: 'flex', justifyContent: 'space-around', flexWrap: 'nowrap', gap: 2 }}>
+                        <Typography variant="body2">Calories: <strong>{totals.kcal.toFixed(0)} / {goals.kcal} kcal</strong></Typography>
+                        <Typography variant="body2">Protein: <strong>{totals.protein.toFixed(1)} / {goals.protein} g</strong></Typography>
+                        <Typography variant="body2">Fiber: <strong>{totals.fiber.toFixed(1)} / {goals.fiber} g</strong></Typography>
                     </Box>
                     <List className="food-list">
                         {todaysFoods.map((food, index) => {
@@ -283,8 +336,14 @@ const DietPage = () => {
                 <DialogTitle>Enter Amount</DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        How many grams of {foodToAdd}?
+                        How many grams of {foodDetailsForModal?.name}?
                     </DialogContentText>
+                    {foodDetailsForModal && foodDetailsForModal['Serving Weight 1 (g)'] && (
+                        <DialogContentText sx={{ mt: 1, fontSize: '0.9rem', color: 'text.secondary' }}>
+                            Serving size: {foodDetailsForModal['Serving Weight 1 (g)']}g
+                            {foodDetailsForModal['Serving Description 1 (g)'] && ` (${foodDetailsForModal['Serving Description 1 (g)']})`}
+                        </DialogContentText>
+                    )}
                     <TextField
                         autoFocus
                         margin="dense"
@@ -367,6 +426,48 @@ const DietPage = () => {
                 <DialogActions>
                     <Button onClick={handleCloseEditModal}>Cancel</Button>
                     <Button onClick={handleSaveChanges}>Save</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Diet Goals Settings Modal */}
+            <Dialog open={isDietSettingsModalOpen} onClose={handleCloseDietSettingsModal}>
+                <DialogTitle>Set Daily Goals</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        autoFocus
+                        margin="dense"
+                        name="kcal"
+                        label="Calorie Goal (kcal)"
+                        type="number"
+                        fullWidth
+                        variant="standard"
+                        value={tempGoals.kcal}
+                        onChange={handleGoalChange}
+                    />
+                    <TextField
+                        margin="dense"
+                        name="protein"
+                        label="Protein Goal (g)"
+                        type="number"
+                        fullWidth
+                        variant="standard"
+                        value={tempGoals.protein}
+                        onChange={handleGoalChange}
+                    />
+                    <TextField
+                        margin="dense"
+                        name="fiber"
+                        label="Fiber Goal (g)"
+                        type="number"
+                        fullWidth
+                        variant="standard"
+                        value={tempGoals.fiber}
+                        onChange={handleGoalChange}
+                    />
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseDietSettingsModal}>Cancel</Button>
+                    <Button onClick={handleSaveGoals}>Save</Button>
                 </DialogActions>
             </Dialog>
         </div>
