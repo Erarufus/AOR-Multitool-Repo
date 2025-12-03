@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('api', {
     loadFoodsForDate: (dateString) => ipcRenderer.invoke('diet:loadFoods', dateString),
     saveFoodsForDate: (dateString, foods) => ipcRenderer.invoke('diet:saveFoods', dateString, foods),
     getFoodDetails: (foodName) => ipcRenderer.invoke('foods:getDetails', foodName),
+    loadFoodsForDateRange: (startDate, endDate) => ipcRenderer.invoke('diet:loadFoodsForDateRange', startDate, endDate),
   });

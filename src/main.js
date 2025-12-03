@@ -316,12 +316,14 @@ ipcMain.handle('foods:getDetails', async (event, foodName) => {
 ipcMain.handle('diet:loadFoods', async (event, dateString) => {
   const filePath = path.join(dietPath, `${dateString}.json`);
   try {
-    if (fs.existsSync(filePath)) {
-      const data = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(data);
-    }
-    return []; // Return empty array if file doesn't exist
+    // Use asynchronous readFile and handle non-existent files gracefully.
+    const data = await fs.promises.readFile(filePath, 'utf-8');
+    return JSON.parse(data);
   } catch (error) {
+    // If the file doesn't exist (ENOENT), it's not an error, just return an empty array.
+    if (error.code === 'ENOENT') {
+      return [];
+    }
     console.error(`Failed to load foods for ${dateString}:`, error);
     return []; // Return empty array on error
   }
@@ -330,14 +332,56 @@ ipcMain.handle('diet:loadFoods', async (event, dateString) => {
 ipcMain.handle('diet:saveFoods', async (event, dateString, foods) => {
   const filePath = path.join(dietPath, `${dateString}.json`);
   try {
-    // To keep the directory clean, we'll write the file only if there are foods.
-    // If the list is empty, we'll ensure the file is deleted if it exists.
-    fs.writeFileSync(filePath, JSON.stringify(foods, null, 2));
+    if (foods && foods.length > 0) {
+      // If there are foods, write them to the file asynchronously.
+      await fs.promises.writeFile(filePath, JSON.stringify(foods, null, 2));
+    } else {
+      // If the list is empty, delete the file if it exists to keep the directory clean.
+      // We ignore the error if the file doesn't exist in the first place.
+      await fs.promises.unlink(filePath).catch(err => {
+        if (err.code !== 'ENOENT') throw err; // Re-throw if it's not a "file not found" error
+      });
+    }
     return { success: true };
   } catch (error) {
     console.error(`Failed to save foods for ${dateString}:`, error);
     return { success: false, error: error.message };
   }
+});
+
+ipcMain.handle('diet:loadFoodsForDateRange', async (event, startDateString, endDateString) => {
+  const dateArray = [];
+  let currentDate = new Date(startDateString);
+  const endDate = new Date(endDateString);
+
+  while (currentDate <= endDate) {
+    dateArray.push(new Date(currentDate));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  const promises = dateArray.map(async (date) => {
+    const dateString = date.toISOString().split('T')[0];
+    const filePath = path.join(dietPath, `${dateString}.json`);
+    let dailyTotals = { kcal: 0, protein: 0, fiber: 0 };
+
+    try {
+      const data = await fs.promises.readFile(filePath, 'utf-8');
+      const foods = JSON.parse(data);
+      dailyTotals = foods.reduce((acc, food) => {
+        acc.kcal += food.kcal || 0;
+        acc.protein += food.protein || 0;
+        acc.fiber += food.fiber || 0;
+        return acc;
+      }, { kcal: 0, protein: 0, fiber: 0 });
+    } catch (error) {
+      if (error.code !== 'ENOENT') { // Ignore "file not found" errors, but log others.
+        console.error(`Failed to load or parse food for ${dateString}:`, error);
+      }
+    }
+    return { date: dateString, ...dailyTotals };
+  });
+
+  return Promise.all(promises);
 });
 
 //electron app life extras
@@ -358,4 +402,3 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-
